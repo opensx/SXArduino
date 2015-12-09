@@ -75,15 +75,18 @@
 
 
 // defines for state machine
-#define HEADER	0
-#define DATA	1
-
+#define SYNC	0
+#define PWR     1
+#define ADDR    2
+#define DATA	3
 
 // defines for Selectrix constants
-#define MAX_DATACOUNT    7    // 7 dataframes in 1 SYNC Channel
-#define MAX_DATABITCOUNT 12   // 12 bits in 1 frame
+#define SX_STOP         3    // 3 "0" bits achter elkaar
+#define SX_DATACOUNT    7    // 7 dataframes in 1 SYNC Channel
+#define SX_SEPLEN       3    // 3 bit in a separated part
+#define SX_BYTELEN     12    // 12 bits for one byte
 
-#define MAX_ADDRESS_NUMBER 112   // SX channels
+#define SX_ADDRESS_NUMBER 112   // SX channels
 
 #define NO_WRITE 256   // Na data to write
 
@@ -94,33 +97,34 @@ public:
 	uint8_t get(uint8_t);
 	uint8_t set(uint8_t, uint8_t);
 	uint8_t isSet(uint8_t);
-    uint8_t getPWRBit(void);
-	void setPWRBit(uint8_t);
+    	uint8_t getPWR(void);
+	void setPWR(uint8_t);
 	void isr(void);
 	uint8_t inSync(void);
 	
 private:
-	void processHeader(void);
-	void processData(void);
+	void initVar();
+	uint8_t calcIndex(int adr);
 
 	uint8_t _sx_numFrame;                 // number frame
 	uint8_t _sx_dataFrameCount;           // frame counting
-	uint8_t _sx_address;                  // current address on the bus
-    uint8_t _sx_state;
-	uint8_t _sx_bitCount;                 // bit counting
+	uint8_t _sx_state;
+	uint8_t _sx_sepCount;                 // bit counting (seperator)
+	uint8_t _sx_byteCount;                // bit counting (byte)
 	
 	uint8_t _sx_PWRBit;                   // current state of POWER on track
 	uint8_t _sx_newPWRBit;                // command POWER on track
 
 	uint8_t _sx_read_data;                // read data
-    uint8_t _sx_write_data;  			  // data to write
+    	uint8_t _sx_write_data;  			  // data to write
+	uint8_t _sx_index;                    // current index in the array
 	uint8_t _sx_writing;				  // active during the actual writing
 	
 	uint8_t _sx_bit;                      // value data bit (T1)
 	uint8_t _sx_sync;                     // set if Frame 0 is processed
 	
-	uint8_t _sxbusrcev[MAX_ADDRESS_NUMBER];   // to store the received SX data
-	uint16_t _sxbussnd[MAX_ADDRESS_NUMBER];   // to store the SX data to send
+	uint8_t _sxbusrcev[SX_ADDRESS_NUMBER];   // to store the received SX data
+	uint16_t _sxbussnd[SX_ADDRESS_NUMBER];   // to store the SX data to send
 
 	/* SX Timing
 	 1   Bit             50 us

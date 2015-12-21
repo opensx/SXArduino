@@ -15,7 +15,9 @@ SXArduino SXbus;                 // Get access to the SX-bus
 uint8_t valrcv;
 uint8_t valsnd;
 int waitSX;
+int waitLussen;
 int waitloop;
+int burst;                      // pauze
 int adr;
 bool noCC2000;
 
@@ -37,9 +39,11 @@ void setup() {
 
     // Init prog
     waitSX = 0;
+    waitLussen = 0;
     valsnd = 0;
     waitloop = 0;
     noCC2000 = true;   // false 0 ... 103, true 0 ... 111
+    burst = 5;         // 5 slagen pauze (= 5 * 77 = 385 msec)
 }
 
 uint8_t getSXbusval(int adr) {
@@ -58,35 +62,35 @@ void setSXbuspower(uint8_t onoff) {
     SXbus.setPWR(onoff);
 }
 
-uint8_t calcIndex(uint8_t adr) {
-  uint8_t frame = 15 - (adr & 15);
-  uint8_t offset = 6 - (adr >> 4);
-  return frame * 7 + offset;
-}
-
 void loop() {
     // put your main code here, to run repeatedly:
-    if (SXbus.inSync() == 1) {                  //  Iedere 80 msec true
-         // fill bytes conform SX messages
+    if (SXbus.inSync() == 1) {                  //  Iedere 76,8 msec true
+        // fill bytes conform SX messages
         for (int j = 0; j < 16; j++) {     // 16 frames
             Serial.print("Data: ");
             for (int i = 0; i < 7; i++) {  //  7 databytes per frame
                 adr = ((6 - i) << 4) + (15 - j);
                 if ((adr < 104) || (noCC2000)) {       // Exclude the addresses used by the CC2000
-                    setSXbusval(adr, valsnd);
-                    valrcv = getSXbusval(adr);
-                    Serial.print(valsnd);              // 2 tekens
-                    Serial.print("=");                 // 1 teken
-                    Serial.print(valrcv);              // 2 tekens
-                    if (i < 6) {
-                        Serial.print(", ");            // 2 tekens
+                    if (waitLussen == 0) {
+                        Serial.print(valsnd);
+                        Serial.print("=");
+                        setSXbusval(adr, valsnd);
+                        valsnd++;
                     }
-                    valsnd++;
+                    valrcv = getSXbusval(adr);
+                    Serial.print(valrcv);
+                    if (i < 6) {
+                        Serial.print(", ");
+                    }
                 }
             }
             Serial.println();
+      }
+        if (burst < waitLussen) {
+            waitLussen = 0;
+        } else {
+            waitLussen++;
         }
-
         Serial.print("Power: ");           // 7 tekens
         if (getSXbuspower() == 1) {
             Serial.println("On");
@@ -96,19 +100,21 @@ void loop() {
 
         waitSX++;
         if (waitSX > 5) {   // 5 x 80 ms = 400 ms wachttijd
+            waitSX = 0;
+            Serial.print("Switch power ");          
             if (getSXbuspower() == 1) {
-                setSXbuspower(0);          
+                setSXbuspower(0);
+                Serial.println("off");          
             } else {
                 setSXbuspower(1);          
+                Serial.println("on");
             }
-            waitSX = 0;
         }
-
         waitloop = 0;
     } else {
         if (waitloop == 0) {
-            Serial.println("Waiting....");                   // 15 tekens (incl CR+LF)
+            Serial.println("Waiting.... ");                   // 15 tekens (incl CR+LF)
         }
         waitloop++;                                            // max 63 tekens totaal => 32 msec bij 19200 baud
-    }
+        }
 }

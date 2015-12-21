@@ -59,6 +59,7 @@ void setup() {
 void serialEvent() {
     // Read all the data
     while (Serial.available()) {
+      if (cmdAdr) {
         // First byte is a command, decode it
             cmdRcvd = (uint8_t)Serial.read();
             // If byte value > 127 a write command, data in second byte

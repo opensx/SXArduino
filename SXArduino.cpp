@@ -1,8 +1,12 @@
 /*
  * SXAduino.cpp
  *
- *  Version:    3.0
+ *  Version:    3.1
  *  Copyright:  Gerard van der Sel
+ *
+ *  Changed on: 27.12.2015
+ *  Version: 	3.1
+ *  Changes: 	Added 3 and 4 pin interface.
  *
  *  Changed on: 19-12.2015
  *  Version: 	3.0
@@ -103,24 +107,37 @@ This library is free software; you can redistribute it and/or
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
  */
-
+ 
 #include <Arduino.h> 
 
 #include "SXArduino.h"
 
 SXArduino::SXArduino() {
-    pinMode(SX_T0, INPUT);      // SX-T0 is an input, no pull up to simulate tri-state
-    pinMode(SX_T1, INPUT);      // SX-T1 is also an input
+    pinMode(SX_T0, INPUT);           // SX-T0 is an input, no pull up to simulate tri-state
+    pinMode(SX_T1, INPUT);           // SX-T1 is also an input, no pull up to simulate tri-state
+#ifndef _use4pin
     pinMode(SX_D, INPUT);       // SX-D is also an input when not writing to allow other devices to write
+#else
+    pinMode(SX_D_LOW, OUTPUT);       // SX-LOW_D is output but set high to stop wrting low
+	digitalWrite(SX_D_LOW, HIGH);
+    pinMode(SX_D_HIGH, OUTPUT);      // SX-HIGH-D is output but set high to stop wrting high
+	digitalWrite(SX_D_HIGH, HIGH);
+#endif // _use4pin
 }
 
 void SXArduino::init() {
      // initialize function
      // initialize pins and variables
-
-	pinMode(SX_T0, INPUT);      // SX-T0 is an input, no pull up to simulate tri-state
-	pinMode(SX_T1, INPUT);      // SX-T1 is also an input
-	pinMode(SX_D, INPUT);       // SX-D is also an input when not writing to allow other devices to write
+    pinMode(SX_T0, INPUT);           // SX-T0 is an input, no pull up to simulate tri-state
+    pinMode(SX_T1, INPUT);           // SX-T1 is also an input
+#ifndef _use4pin
+    pinMode(SX_D, INPUT);            // SX-D is also an input when not writing to allow other devices to write
+#else
+    pinMode(SX_D_LOW, OUTPUT);       // SX-LOW_D is output but set high to stop wrting low
+	digitalWrite(SX_D_LOW, HIGH);
+    pinMode(SX_D_HIGH, OUTPUT);      // SX-HIGH-D is output but set high to stop wrting high
+	digitalWrite(SX_D_HIGH, HIGH);
+#endif // _use4pin
 
 	for (int i = 0; i < SX_ADDRESS_NUMBER; i++) {
 		_sxbusrcev[i] = 0;                                     // reset sx received data to zero
@@ -129,7 +146,7 @@ void SXArduino::init() {
 	initVar();                                                 // Start looking for SYNC
 }
 
-void SXArduino:: initVar() {
+void SXArduino::initVar() {
 	// start always with search for header
 	_sx_state = SYNC;                                          // First look for SYNC pattern
 	_sx_dataFrameCount = SX_DATACOUNT;                         // Read all dataframes
@@ -149,10 +166,46 @@ void SXArduino:: initVar() {
 	_sx_sync = 0;                                              // Clear sync-flag
 }
 
+// Local functions
+uint8_t readT1() {
+	return (SX_T1_PINREG & _BV(SX_T1_PORTPIN)) > 0;
+}
+
+void writeD(uint8_t val) {
+	switch(val) {
+#ifndef _use4pin
+	case 0:
+		bitWrite(SX_D_DDR, SX_D, HIGH);				      // Switch to low
+		bitWrite(SX_D_PORT, SX_D, LOW);
+		break;
+	case 1:	
+		bitWrite(SX_D_DDR, SX_D, HIGH);		              // Switch to high
+		bitWrite(SX_D_PORT, SX_D, HIGH);
+		break;
+	default:	
+		bitWrite(SX_D_DDR, SX_D, LOW);		                  // Switch to input (TRI_STATE)
+		break;
+#else
+	case 0:
+		bitWrite(SX_D_HIGH_PORT, SX_D_HIGH, HIGH);          // Switch to low
+		bitWrite(SX_D_LOW_PORT, SX_D_LOW, LOW);
+		break;
+	case 1:	
+		bitWrite(SX_D_LOW_PORT, SX_D_LOW, HIGH);            // Switch to high
+		bitWrite(SX_D_HIGH_PORT, SX_D_HIGH, LOW);
+		break;
+	default:	
+		bitWrite(SX_D_LOW_PORT, SX_D_LOW, HIGH);            // Switch off (TRI_STATE)
+		bitWrite(SX_D_HIGH_PORT, SX_D_HIGH, HIGH);
+		break;
+#endif // _use4pin_
+	}
+}
+
 // interrupt service routine (AVR INT1)
 // driven by RISING EDGES of the SX clock signal T0 (SX pin 1)
 void SXArduino::isr() {
-	_sx_bit = (SX_T1_PINREG & _BV(SX_T1_PORTPIN)) > 0;         // read pin
+	_sx_bit = readT1();                                        // read pin
 
 	switch (_sx_state) {
 		// Find sync pattern "0001" to start reading and writing
@@ -173,15 +226,14 @@ void SXArduino::isr() {
 		case PWR:
 			_sx_sepCount--;
 			if (_sx_sepCount == 0) {                           // Skip the separator
-				bitWrite(SX_D_DDR, SX_D_PORTPIN, LOW);		   // Switch pin to input
+				writeD(TRI_STATE);		                       // Switch pin to input
 				_sx_state = ADDR;                              // Setup for next state ADDR
 				_sx_byteCount = SX_BYTELEN / 2;
 				_sx_sepCount = SX_SEPLEN;
 				_sx_numFrame = 0;
 			} else {
 				if (_sx_newPWR != 2) {                         // Set power from me
-					bitWrite(SX_D_DDR, SX_D_PORTPIN, HIGH);	   // Switch pin to output
-					bitWrite(SX_D_PORT, SX_D_PORTPIN, _sx_newPWR); // and write newPWR
+					writeD(_sx_newPWR);                        // write newPWR
 					_sx_newPWR = 2;                            // Power set
 				}   // end if _sx_newPWR 
 				_sx_PWR = _sx_bit;                             // Get power status from central
@@ -194,6 +246,9 @@ void SXArduino::isr() {
 				_sx_sepCount = SX_SEPLEN;
 			} else {
 				_sx_numFrame = (_sx_numFrame * 2) + _sx_bit;   // Read bit into framenumber
+				if ((_sx_byteCount == 2) && (_sx_numFrame == 0)) {
+					_sx_sync = 1;                              // Signal frame 0 for sync purposes
+				}
 			}
 			_sx_byteCount--;
 			if (_sx_byteCount == 0) {                          // Addres part is processed
@@ -209,21 +264,17 @@ void SXArduino::isr() {
 				} else {
 					_sx_writing = 0;                           // No write
 				}
-				if (_sx_numFrame == 0) {
-					_sx_sync = 1;                              // Signal frame 0 for sync purposes
-				}
 			}
 			break;
 		// Read (and write) the data bits
 		case DATA: 
 			_sx_sepCount--;
 			if (_sx_sepCount == 0) {                           // Skip the separator
-				bitWrite(SX_D_DDR, SX_D_PORTPIN, LOW);         // Switch pin to input
+				writeD(TRI_STATE);                             // Switch pin to input
 				_sx_sepCount = SX_SEPLEN;
 			} else {
 				if (_sx_writing == 1)  {                        // If we want to write
-					bitWrite(SX_D_DDR, SX_D_PORTPIN, HIGH);		// Switch pin to output
-					bitWrite(SX_D_PORT, SX_D_PORTPIN, bitRead(_sx_write_data, 0));
+					writeD(bitRead(_sx_write_data, 0));         // Write bit to bus
 					_sx_write_data = _sx_write_data / 2;        // Prepare for next write
 				}
 				_sx_read_data = (_sx_read_data / 2);            // Prepare for reading data
@@ -259,7 +310,7 @@ void SXArduino::isr() {
 			}
 			break;
 		default:
-			bitWrite(SX_D_DDR, SX_D_PORTPIN, LOW);			    // Switch pin to input
+			writeD(TRI_STATE);                  			    // Switch pin to input
 			initVar();                                          // Start looking for SYNC
 			break;
 	}  //end switch/case _sx_state
